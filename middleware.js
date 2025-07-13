@@ -1,48 +1,54 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
-import { Key } from 'lucide-react';
+import { NextResponse } from 'next/server';
+import { createMiddleware, shield, detectBot } from '@arcjet/next';
 
-const isProtectedRoute = createRouteMatcher( 
-  ['/dashboard(.*)', '/account(.*)', '/transaction(.*)']
-);
+const isProtectedRoute = createRouteMatcher([
+  '/dashboard(.*)',
+  '/account(.*)',
+  '/transaction(.*)',
+]);
 
 // Create Arcjet middleware
- const aj = arcjet({
-   key: process.env.ARCJET_KEY,
+const arcjet = createMiddleware({
+  key: process.env.ARCJET_KEY || 'aj_test_key',
   rules: [
-    // Shield protection for content and security
-    shield({
-      mode: "LIVE",
-    }),
+    shield({ mode: 'LIVE' }),
     detectBot({
-      mode: "LIVE", // will block requests
-      allow: [
-        "CATEGORY:SEARCH_ENGINE", // Google, Bing, etc
-        "GO_HTTP", // For Inngest
-      ],
-    } ),
+      mode: 'LIVE',
+      allow: ['CATEGORY:SEARCH_ENGINE', 'GO_HTTP'],
+    }),
   ],
-} );
-
-
-const clerk = clerkMiddleware(async (auth, req) => {
-  const { userId } = await auth();
-
-  if (!userId && isProtectedRoute(req)) {
-    const { redirectToSignIn } = await auth();
-    return redirectToSignIn();
-  }
-
-  return NextResponse.next();
 });
 
-// Chain middlewares - ArcJet runs first, then Clerk
-export default createMiddleware(aj, clerk);
+export async function middleware(request) {
+  const response = NextResponse.next();
+  
+  const clerkResult = await clerkMiddleware({
+    afterAuth(auth, req, evt) {
+      const { userId } = auth;
+      if (!userId && isProtectedRoute(req)) {
+        return evt.redirectToSignIn();
+      }
+      return response;
+    }
+  })(request);
 
+  if (clerkResult !== response) {
+    return clerkResult;
+  }
+  
+  return arcjet()(request);
+}
+
+// Fix the matcher pattern - simplify it to avoid regex issues
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files, unless found in search params
-    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
-    // Always run for API routes
-    '/(api|trpc)(.*)',
+    // Protected routes
+    '/dashboard/:path*',
+    '/account/:path*',
+    '/transaction/:path*',
+    // API routes
+    '/api/:path*',
+    '/trpc/:path*',
   ],
 };

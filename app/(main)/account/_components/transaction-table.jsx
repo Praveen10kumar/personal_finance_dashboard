@@ -1,17 +1,38 @@
 "use client";
 
-import React, { Suspense, useMemo, useState } from 'react'
+import React, { Suspense, useMemo, useState, useEffect } from 'react'
 import { Table, TableBody, TableCell, TableCaption, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Checkbox } from '@/components/ui/checkbox';
 import { format } from 'date-fns';
-import { categoryColors } from './data/category-colors';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Badge, ChevronDown, ChevronUp, Clock, RefreshCw, Search, Trash, X } from 'lucide-react';
+import { Badge, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, MoreHorizontal, RefreshCw, Search, Trash, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useRouter } from 'next/router';
-import { DropdownMenuItem } from '@radix-ui/react-dropdown-menu';
+import { useRouter } from 'next/navigation';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger, 
+  DropdownMenuSeparator 
+} from '@/components/ui/dropdown-menu';
+import { 
+  Tooltip, 
+  TooltipContent, 
+  TooltipTrigger 
+} from '@/components/ui/tooltip';
+import { toast } from '@/components/ui/use-toast'; // Use shadcn toast instead of react-toastify
 
+// Add missing constant
+const ITEMS_PER_PAGE = 10;
 
+const bulkDeleteTransactions = async (ids) => {
+  return await fetch('/api/transactions/bulk-delete', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  }).then(res => res.json());
+};
 
 const TransactionTable = ({ transactions }) => {
 
@@ -33,9 +54,9 @@ const TransactionTable = ({ transactions }) => {
 
         //Applying search filter
         if(searchTerm) {
-            const SearchLower = searchTerm.toLoweCase();
-            result = result.filter((transactions) => 
-                transactions.description?.toLoweCase().includes(SearchLower)
+            const searchLower = searchTerm.toLowerCase();
+            result = result.filter((transaction) => 
+                transaction.description?.toLowerCase().includes(searchLower)
             );
         }
 
@@ -94,11 +115,12 @@ const TransactionTable = ({ transactions }) => {
             );
         }, [filteredAndSortedTransactions, currentPage]);
 
+    // Fix handleSort function
     const handleSort = (field) => {
         setSortConfig((prevConfig) => ({
             field,
             direction: 
-                current.field === field && current.direction === 'asc' ? 'desc' : 'asc',
+                prevConfig.field === field && prevConfig.direction === 'asc' ? 'desc' : 'asc',
         }));
     }
 
@@ -106,10 +128,11 @@ const TransactionTable = ({ transactions }) => {
         setSelectedIds(current=>current.includes(id)?current.filter(item=>item!=id):[...current,id])
     }
 
-    const handleSelectAll = () =>{
-        setSelectedIds(current.length === filteredAndSortedTransactions
-            ?[]
-            :filteredAndSortedTransactions.map(t=>t.id))
+    // Fix handleSelectAll function
+    const handleSelectAll = () => {
+        setSelectedIds(selectedIds.length === paginatedTransactions.length
+            ? []
+            : paginatedTransactions.map(t => t.id))
     }
 
     const handlePageChange = (newPage) => {
@@ -143,7 +166,11 @@ const TransactionTable = ({ transactions }) => {
 
     useEffect(() => {
         if (deleted && !deleteLoading) {
-            toast.error("Transactions deleted successfully");
+            toast({
+                title: "Success",
+                description: "Transactions deleted successfully",
+                variant: "destructive",
+            });
         }
     }, [deleted, deleteLoading]);
 
@@ -153,6 +180,24 @@ const TransactionTable = ({ transactions }) => {
         setTypeFilter("");
         setSelectedIds([]);
     }
+
+    // Add this function instead of dynamic class generation
+    const getCategoryBgClass = (category) => {
+        const classMap = {
+          'Food': 'bg-blue-500',
+          'Housing': 'bg-green-500',
+          'Transportation': 'bg-yellow-500',
+          'Entertainment': 'bg-purple-500',
+          'Healthcare': 'bg-red-500',
+          'Shopping': 'bg-pink-500',
+          'Personal': 'bg-indigo-500',
+          'Travel': 'bg-emerald-500',
+          'Education': 'bg-amber-500',
+          'default': 'bg-gray-500'
+        };
+        
+        return classMap[category] || classMap.default;
+      };
 
   return (
     <div className='px-5 space-y-4'>
@@ -270,11 +315,11 @@ const TransactionTable = ({ transactions }) => {
                             <TableCell>{format(new Date(transaction.date), 'PP')}</TableCell>
                             <TableCell>{transaction.description}</TableCell>
                             <TableCell className="capitalize">
-                                <span style={{ color: categoryColors[transaction.category] }} className='px-2 py-1 rounded text-sm text-white'>
+                                <span className={`px-2 py-1 rounded text-sm text-white ${getCategoryBgClass(transaction.category)}`}>
                                     {transaction.category}
                                 </span>
                             </TableCell>
-                            <TableCell className="text-right font-medium" style={{ color: transaction.type === 'EXPENSE' ? 'red' : 'green' }}>
+                            <TableCell className={`text-right font-medium ${transaction.type === 'EXPENSE' ? 'text-red-600' : 'text-green-600'}`}>
                                 {transaction.type === 'EXPENSE' ? '-' : '+'}
                                 ${transaction.amount.toFixed(2)}
                             </TableCell>
@@ -310,11 +355,12 @@ const TransactionTable = ({ transactions }) => {
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent>
                                         <DropdownMenuItem
-                                            onclick={() => 
+                                            onClick={() => 
                                                 router.push(`transactions/edit=${transaction.id}`)
                                             }
                                         >
-                                            Edit</DropdownMenuItem>
+                                            Edit
+                                        </DropdownMenuItem>
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem className="text-destructive"
                                             onClick ={() => 
